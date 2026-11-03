@@ -50,7 +50,7 @@ done
 [ $missing -eq 1 ] && { echo "fix the data paths first (DATA_ROOT=$DATA_ROOT)"; exit 1; }
 
 # 2. refuse to start twice
-if pgrep -f "python -u run.py" > /dev/null; then
+if pgrep -f "run.py --task_name" > /dev/null; then
   echo "❌ run.py processes are already running; not starting a second batch"; exit 1
 fi
 

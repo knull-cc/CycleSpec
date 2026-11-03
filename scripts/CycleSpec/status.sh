@@ -37,7 +37,7 @@ for ds in $DATASETS; do
   done
 done
 echo
-echo "running run.py processes: $(pgrep -fc 'python -u run.py')"
+echo "running run.py processes: $(pgrep -fc "run.py --task_name")"
 grep -l "Traceback\|out of memory" logs/*/*.log logs/compare_*.log 2>/dev/null | sed 's/^/error in: /'
 command -v nvidia-smi > /dev/null && nvidia-smi --query-gpu=name,memory.used,memory.total,utilization.gpu --format=csv,noheader
 free -g | awk 'NR==2{print "RAM used " $3 "G / " $2 "G"}'
