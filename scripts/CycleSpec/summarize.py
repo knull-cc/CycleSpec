@@ -20,12 +20,47 @@ def pct(new, ref):
     return (new - ref) / ref * 100.0
 
 
+DS_ORDER = ["etth1", "etth2", "ettm1", "ettm2", "weather", "electricity", "traffic"]
+
+
+def compact(groups):
+    """One row per (dataset, H, seed): MSE/MAE for each variant, and % change vs PhaseFormer."""
+    def cell(s):
+        return f"{s['mse']:.4f} {s['mae']:.4f}" if s else f"{'-':>6} {'-':>6}"
+
+    def delta(s, b):
+        if not s or not b:
+            return f"{'.':>15}"
+        return f"{pct(s['mse'], b['mse']):+6.2f}% {pct(s['mae'], b['mae']):+6.2f}%"
+
+    hdr = (f"{'dataset':<12}{'H':>4}  {'PhaseFormer':^13}  {'CycleSpec(joint)':^13}  {'dMSE   dMAE':^15}  "
+           f"{'CycleSpec(frozen)':^13}  {'dMSE   dMAE':^15}")
+    print(hdr)
+    print(f"{'':<12}{'':>4}  {'MSE    MAE':^13}  {'MSE    MAE':^13}  {'':^15}  {'MSE    MAE':^13}")
+    print("-" * len(hdr))
+    key = lambda kv: (DS_ORDER.index(kv[0][0]) if kv[0][0] in DS_ORDER else 99, kv[0][1], str(kv[0][2]))
+    wins = defaultdict(lambda: [0, 0, 0])  # variant -> [mse wins, mae wins, n]
+    for (ds, h, seed), runs in sorted(groups.items(), key=key):
+        by = {s["variant"]: s for s in runs}
+        b, j, f = by.get("PhaseFormer"), by.get("CycleSpec-joint"), by.get("CycleSpec-frozen")
+        print(f"{ds:<12}{h:>4}  {cell(b)}  {cell(j)}  {delta(j, b)}  {cell(f)}  {delta(f, b)}")
+        for name, s in (("joint", j), ("frozen", f)):
+            if s and b:
+                wins[name][0] += s["mse"] < b["mse"]
+                wins[name][1] += s["mae"] < b["mae"]
+                wins[name][2] += 1
+    print()
+    for name, (wm, wa, n) in wins.items():
+        print(f"CycleSpec({name}) beats PhaseFormer: MSE {wm}/{n}, MAE {wa}/{n}")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--ds", default=None, help="etth1, etth2, ettm1, ettm2, weather, electricity, traffic")
     ap.add_argument("--pred_len", type=int, default=None)
     ap.add_argument("--seed", type=int, default=None)
     ap.add_argument("--results_dir", default="./results")
+    ap.add_argument("--compact", action="store_true", help="one row per dataset/H with MSE and MAE of every variant")
     a = ap.parse_args()
 
     groups = defaultdict(list)
@@ -44,15 +79,13 @@ def main():
         print("no summary.json matched under", a.results_dir)
         return
 
+    if a.compact:
+        compact(groups)
+        return
+
     for (ds, h, seed), runs in sorted(groups.items(), key=lambda kv: (kv[0][0], kv[0][1], str(kv[0][2]))):
         runs.sort(key=lambda s: ORDER.get(s["variant"], 9))
         base = next((s for s in runs if s["variant"] == "PhaseFormer"), None)
-        # VarHA (test-time) rows: same checkpoint, val-selected online head adaptation
-        for s in list(runs):
-            v = (s.get("varha") or {}).get("results", {}).get("B2_VarHA")
-            if v:
-                runs.append(dict(s, variant=s["variant"] + "+VarHA", mse=v[0], mae=v[1],
-                                 params_adapter=0, train_time_s=None))
         print(f"\n== {ds}  L={runs[0]['seq_len']} -> H={h}  seed={seed} ==")
         hdr = (f"{'variant':<18}{'MSE':>9}{'MAE':>9}{'dMSE%':>8}{'dMAE%':>8}{'best/ran':>10}"
                f"{'backbone':>10}{'adapter':>9}{'trainable':>10}{'time(s)':>9}")
