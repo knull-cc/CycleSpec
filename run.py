@@ -168,6 +168,12 @@ if __name__ == '__main__':
                         help='joint: adapter + backbone trained together; frozen: load --cs_init_ckpt, train adapter only')
     parser.add_argument('--cs_init_ckpt', type=str, default='', help='base PhaseFormer checkpoint for frozen mode')
 
+    # VarHA: TT-HA style test-time heterogeneous adaptation on the frozen model (after test)
+    parser.add_argument('--varha', type=int, default=0, help='1: run the VarHA test-time protocol after testing')
+    parser.add_argument('--varha_batch', type=int, default=24, help='windows per online step')
+    parser.add_argument('--varha_lr', type=str, default='', help='lr grid searched on val, e.g. 0.001,0.003,0.01')
+    parser.add_argument('--varha_groups', type=str, default='', help='group-count grid searched on val, e.g. 1,3')
+
     args = parser.parse_args()
     if args.model == 'CycleSpec' and args.cs_train_mode not in ('joint', 'frozen'):
         parser.error('--cs_train_mode must be joint or frozen')
@@ -238,6 +244,9 @@ if __name__ == '__main__':
 
             print('>>>>>>>testing : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))
             exp.test(setting)
+            if args.varha:
+                print('>>>>>>>VarHA (test-time adaptation, frozen model) : {}<<<<<<<<<<'.format(setting))
+                exp.test_varha(setting)
             if args.gpu_type == 'mps':
                 torch.backends.mps.empty_cache()
             elif args.gpu_type == 'cuda':
@@ -268,6 +277,9 @@ if __name__ == '__main__':
 
         print('>>>>>>>testing : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))
         exp.test(setting, test=1)
+        if args.varha:
+            print('>>>>>>>VarHA (test-time adaptation, frozen model) : {}<<<<<<<<<<'.format(setting))
+            exp.test_varha(setting)
         if args.gpu_type == 'mps':
             torch.backends.mps.empty_cache()
         elif args.gpu_type == 'cuda':

@@ -16,6 +16,9 @@
 #                                                                           default ./resources/all_datasets
 #   LOG_DIR      logs go to $LOG_DIR/<dataset>/<variant>_pl<H>_s<seed>.log default ./logs
 #   CS_HIDDEN CS_WINDOWS CS_KERNEL CS_BRANCHES CS_ACT   adapter hyper-parameters
+#   VARHA        1: after testing, run the VarHA (TT-HA) test-time protocol on the
+#                frozen model (val-selected, test once)                     default 0
+#   IS_TRAINING  0: skip training, load ./checkpoints/<setting>/checkpoint.pth default 1
 
 MODEL=${MODEL:-PhaseFormer}
 CS_MODE=${CS_MODE:-joint}
@@ -24,6 +27,8 @@ GPU=${GPU:-0}
 NUM_WORKERS=${NUM_WORKERS:-2}
 DATA_ROOT=${DATA_ROOT:-./resources/all_datasets}
 LOG_DIR=${LOG_DIR:-./logs}
+VARHA=${VARHA:-0}
+IS_TRAINING=${IS_TRAINING:-1}
 
 CS_HIDDEN=${CS_HIDDEN:-8}
 CS_WINDOWS=${CS_WINDOWS:-30,15,7}
@@ -64,11 +69,13 @@ run_one() {
 
   mkdir -p "$LOG_DIR/$DS_ID"
   local LOG="$LOG_DIR/$DS_ID/${VARIANT}_pl${PRED_LEN}_s${SEED}.log"
+  [ "$VARHA" = "1" ] && LOG="$LOG_DIR/$DS_ID/${VARIANT}_pl${PRED_LEN}_s${SEED}_varha.log"
   echo "🚀 ${VARIANT} | ${DS_ID} | H=${PRED_LEN} | seed=${SEED} | log: ${LOG}"
 
   python -u run.py \
     --task_name long_term_forecast \
-    --is_training 1 \
+    --is_training "$IS_TRAINING" \
+    --varha "$VARHA" \
     --model "$MODEL" \
     --model_id "$MODEL_ID" \
     --fix_seed "$SEED" \

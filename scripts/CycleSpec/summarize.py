@@ -47,6 +47,12 @@ def main():
     for (ds, h, seed), runs in sorted(groups.items(), key=lambda kv: (kv[0][0], kv[0][1], str(kv[0][2]))):
         runs.sort(key=lambda s: ORDER.get(s["variant"], 9))
         base = next((s for s in runs if s["variant"] == "PhaseFormer"), None)
+        # VarHA (test-time) rows: same checkpoint, val-selected online head adaptation
+        for s in list(runs):
+            v = (s.get("varha") or {}).get("results", {}).get("B2_VarHA")
+            if v:
+                runs.append(dict(s, variant=s["variant"] + "+VarHA", mse=v[0], mae=v[1],
+                                 params_adapter=0, train_time_s=None))
         print(f"\n== {ds}  L={runs[0]['seq_len']} -> H={h}  seed={seed} ==")
         hdr = (f"{'variant':<18}{'MSE':>9}{'MAE':>9}{'dMSE%':>8}{'dMAE%':>8}{'best/ran':>10}"
                f"{'backbone':>10}{'adapter':>9}{'trainable':>10}{'time(s)':>9}")
