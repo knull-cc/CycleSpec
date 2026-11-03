@@ -68,11 +68,15 @@ def run(device):
     xc = torch.randn(50, 30, 24, device=device, requires_grad=True)
     xf = xc.detach().clone().requires_grad_(True)
     yc, yf = ad_c(xc), ad_f(xf)
-    yc.square().sum().backward()
-    yf.square().sum().backward()
+    yc.square().mean().backward()
+    yf.square().mean().backward()
     d_out = (yc - yf).abs().max().item()
-    d_grad = max((a.grad - b.grad).abs().max().item() for a, b in zip(ad_c.parameters(), ad_f.parameters()))
-    ok(d_out < 1e-5 and d_grad < 1e-4, f"chunked == unchunked (output diff {d_out:.1e}, grad diff {d_grad:.1e})")
+    # gradients are sums over the batch; chunking changes the float32 summation order,
+    # so compare them relative to their size
+    d_grad = max(((a.grad - b.grad).abs().max() / (b.grad.abs().max() + 1e-12)).item()
+                 for a, b in zip(ad_c.parameters(), ad_f.parameters()))
+    ok(d_out < 1e-5 and d_grad < 1e-4,
+       f"chunked == unchunked (output diff {d_out:.1e}, relative grad diff {d_grad:.1e})")
 
     # 2c. ECL-sized batch on GPU: 256 x 321 series through forward + backward
     if device.type == "cuda":
