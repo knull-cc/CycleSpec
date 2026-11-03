@@ -167,6 +167,8 @@ if __name__ == '__main__':
     parser.add_argument('--cs_train_mode', type=str, default='joint',
                         help='joint: adapter + backbone trained together; frozen: load --cs_init_ckpt, train adapter only')
     parser.add_argument('--cs_init_ckpt', type=str, default='', help='base PhaseFormer checkpoint for frozen mode')
+    parser.add_argument('--cs_chunk', type=int, default=8192,
+                        help='adapter processes at most this many series per STFT/conv call (0 = no chunking)')
     parser.add_argument('--eval_test_each_epoch', type=int, default=1,
                         help='1 (upstream behaviour): also evaluate the test set after every epoch (printed only)')
 

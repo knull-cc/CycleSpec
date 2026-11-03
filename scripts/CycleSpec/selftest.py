@@ -59,6 +59,32 @@ def run(device):
         spec = s._stft(u.permute(0, 2, 1).reshape(-1, 30))
         ok(err < 1e-4, f"win={s.win:2d} hop={s.hop} bins={spec.shape[-2]:2d} frames={spec.shape[-1]:2d} recon max err={err:.2e}")
 
+    # 2b. chunking gives the same result (forward and gradients)
+    torch.manual_seed(0)
+    ad_c = CycleSpecAdapter(period_len=24, num_cycles=30, hidden=8, windows=(30, 15, 7), chunk=7).to(device)
+    torch.nn.init.normal_(ad_c.fc_up.weight, std=0.1)
+    ad_f = CycleSpecAdapter(period_len=24, num_cycles=30, hidden=8, windows=(30, 15, 7), chunk=0).to(device)
+    ad_f.load_state_dict(ad_c.state_dict())
+    xc = torch.randn(50, 30, 24, device=device, requires_grad=True)
+    xf = xc.detach().clone().requires_grad_(True)
+    yc, yf = ad_c(xc), ad_f(xf)
+    yc.square().sum().backward()
+    yf.square().sum().backward()
+    d_out = (yc - yf).abs().max().item()
+    d_grad = max((a.grad - b.grad).abs().max().item() for a, b in zip(ad_c.parameters(), ad_f.parameters()))
+    ok(d_out < 1e-5 and d_grad < 1e-4, f"chunked == unchunked (output diff {d_out:.1e}, grad diff {d_grad:.1e})")
+
+    # 2c. ECL-sized batch on GPU: 256 x 321 series through forward + backward
+    if device.type == "cuda":
+        big = CycleSpecAdapter(period_len=24, num_cycles=30, hidden=8, windows=(30, 15, 7)).to(device)
+        torch.nn.init.normal_(big.fc_up.weight, std=0.1)
+        xb = torch.randn(256 * 321, 30, 24, device=device)
+        big(xb).square().mean().backward()
+        torch.cuda.synchronize()
+        ok(True, f"forward+backward with {256 * 321:,} series (ECL, batch 256, chunk {big.chunk})")
+        del big, xb
+        torch.cuda.empty_cache()
+
     # 3. plug == base at init
     cuda = torch.cuda.is_available()
     torch.manual_seed(2021)

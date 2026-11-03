@@ -72,11 +72,15 @@ class CycleSpecAdapter(nn.Module):
 
     def __init__(self, period_len: int = 24, num_cycles: int = 30, hidden: int = 8,
                  windows: Sequence[int] = (30, 15, 7), kernel: int = 3,
-                 branches: str = "both", act: str = "gelu"):
+                 branches: str = "both", act: str = "gelu", chunk: int = 8192):
         super().__init__()
         assert branches in ("both", "freq", "time"), branches
         assert act in ("gelu", "none"), act
         self.branches, self.act = branches, act
+        # series are processed independently, so splitting them into chunks gives the same
+        # result; it keeps each STFT / conv call below CUDA launch limits when
+        # batch * variables is very large (e.g. ECL or Traffic with batch 256)
+        self.chunk = int(chunk)
         if branches == "both":
             self.c_freq = hidden // 2
             self.c_time = hidden - self.c_freq
@@ -96,6 +100,11 @@ class CycleSpecAdapter(nn.Module):
         nn.init.zeros_(self.fc_up.bias)
 
     def delta(self, x):  # (N, T, P) -> (N, T, P)
+        if self.chunk > 0 and x.shape[0] > self.chunk:
+            return torch.cat([self._delta(x[i:i + self.chunk]) for i in range(0, x.shape[0], self.chunk)], dim=0)
+        return self._delta(x)
+
+    def _delta(self, x):
         u = self.fc_down(x)
         if self.act == "gelu":
             u = F.gelu(u)
@@ -135,6 +144,7 @@ class Model(PhaseFormer):
                 kernel=int(getattr(configs, "cs_kernel", 3)),
                 branches=getattr(configs, "cs_branches", "both"),
                 act=getattr(configs, "cs_act", "gelu"),
+                chunk=int(getattr(configs, "cs_chunk", 8192)),
             )
 
     # PhaseFormer.forward calls self._to_phase_series(x_periods) exactly once, right after
