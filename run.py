@@ -167,12 +167,8 @@ if __name__ == '__main__':
     parser.add_argument('--cs_train_mode', type=str, default='joint',
                         help='joint: adapter + backbone trained together; frozen: load --cs_init_ckpt, train adapter only')
     parser.add_argument('--cs_init_ckpt', type=str, default='', help='base PhaseFormer checkpoint for frozen mode')
-
-    # VarHA: TT-HA style test-time heterogeneous adaptation on the frozen model (after test)
-    parser.add_argument('--varha', type=int, default=0, help='1: run the VarHA test-time protocol after testing')
-    parser.add_argument('--varha_batch', type=int, default=24, help='windows per online step')
-    parser.add_argument('--varha_lr', type=str, default='', help='lr grid searched on val, e.g. 0.001,0.003,0.01')
-    parser.add_argument('--varha_groups', type=str, default='', help='group-count grid searched on val, e.g. 1,3')
+    parser.add_argument('--eval_test_each_epoch', type=int, default=1,
+                        help='1 (upstream behaviour): also evaluate the test set after every epoch (printed only)')
 
     args = parser.parse_args()
     if args.model == 'CycleSpec' and args.cs_train_mode not in ('joint', 'frozen'):
@@ -244,9 +240,6 @@ if __name__ == '__main__':
 
             print('>>>>>>>testing : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))
             exp.test(setting)
-            if args.varha:
-                print('>>>>>>>VarHA (test-time adaptation, frozen model) : {}<<<<<<<<<<'.format(setting))
-                exp.test_varha(setting)
             if args.gpu_type == 'mps':
                 torch.backends.mps.empty_cache()
             elif args.gpu_type == 'cuda':
@@ -275,15 +268,8 @@ if __name__ == '__main__':
             args.distil,
             args.des, ii)
 
-        if args.varha:
-            # reuse the finished checkpoint; exp.test is not rerun so summary.json keeps the training info
-            ckpt = os.path.join(args.checkpoints, setting, 'checkpoint.pth')
-            exp.model.load_state_dict(torch.load(ckpt, map_location=args.device))
-            print('>>>>>>>VarHA (test-time adaptation, frozen model) : {} | loaded {}'.format(setting, ckpt))
-            exp.test_varha(setting)
-        else:
-            print('>>>>>>>testing : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))
-            exp.test(setting, test=1)
+        print('>>>>>>>testing : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))
+        exp.test(setting, test=1)
         if args.gpu_type == 'mps':
             torch.backends.mps.empty_cache()
         elif args.gpu_type == 'cuda':

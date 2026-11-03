@@ -220,7 +220,12 @@ class Exp_Long_Term_Forecast(Exp_Basic):
             print("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_time))
             train_loss = np.average(train_loss)
             vali_loss = self.vali(vali_data, vali_loader, criterion)
-            test_loss = self.vali(test_data, test_loader, criterion)
+            # the per-epoch test loss is only printed, never used for model selection;
+            # --eval_test_each_epoch 0 skips it (saves time, but changes the RNG stream)
+            if int(getattr(self.args, 'eval_test_each_epoch', 1)):
+                test_loss = self.vali(test_data, test_loader, criterion)
+            else:
+                test_loss = float('nan')
 
             print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f} Test Loss: {4:.7f}".format(
                 epoch + 1, train_steps, train_loss, vali_loss, test_loss))
@@ -367,95 +372,3 @@ class Exp_Long_Term_Forecast(Exp_Basic):
             json.dump(summary, f, indent=2)
 
         return
-
-    # ------------------------------------------------------------------ VarHA (TT-HA plug-in)
-    def _varha_collect(self, flag):
-        """Frozen backbone, time-ordered windows of one split. Caches the latent Z that
-        enters model.predictor (via a forward hook; the model is not modified), the RevIN
-        statistics of each input window, the truth and the model output."""
-        from torch.utils.data import DataLoader
-        data_set, _ = self._get_data(flag=flag)
-        loader = DataLoader(data_set, batch_size=self.args.batch_size, shuffle=False,
-                            num_workers=0, drop_last=False)  # never shuffled: the stream is in time order
-        model = self.model.module if isinstance(self.model, nn.DataParallel) else self.model
-        model.eval()
-        cache = {}
-        hook = model.predictor.register_forward_hook(lambda m, inp, out: cache.__setitem__('z', inp[0].detach()))
-        Z, MU, SD, Y, OUT = [], [], [], [], []
-        H = self.args.pred_len
-        try:
-            with torch.no_grad():
-                for batch_x, batch_y, batch_x_mark, batch_y_mark in loader:
-                    x = batch_x.float().to(self.device)
-                    out = model(x, batch_x_mark.float().to(self.device), None, None)
-                    if model.use_revin:
-                        mu = x.mean(1)
-                        sd = torch.sqrt(x.var(1, unbiased=False) + model.revin.eps)
-                    else:
-                        mu, sd = torch.zeros_like(x[:, 0]), torch.ones_like(x[:, 0])
-                    Z.append(cache['z'].cpu().numpy())
-                    MU.append(mu.cpu().numpy()); SD.append(sd.cpu().numpy())
-                    Y.append(batch_y[:, -H:, :].float().numpy()); OUT.append(out[:, -H:, :].cpu().numpy())
-        finally:
-            hook.remove()
-        cat = lambda a: np.concatenate(a, 0).astype(np.float64)
-        return data_set, dict(z=np.concatenate(Z, 0).astype(np.float32), mu=cat(MU), sd=cat(SD), y=cat(Y)), cat(OUT)
-
-    def test_varha(self, setting):
-        """TT-HA style test-time heterogeneous adaptation on the frozen backbone.
-        Hyper-parameters are selected on the validation stream only; test is run once."""
-        from utils import varha as V
-        args = self.args
-        if args.features != 'M':
-            raise ValueError('VarHA expects --features M')
-        model = self.model.module if isinstance(self.model, nn.DataParallel) else self.model
-        if not isinstance(model.predictor.decoder, nn.Linear):
-            raise ValueError('VarHA adapts the linear predictor head; run with predictor_use_mlp=0')
-        H = args.pred_len
-        head = dict(W0=model.predictor.decoder.weight.detach().cpu().double().numpy(),
-                    b0=model.predictor.decoder.bias.detach().cpu().double().numpy(),
-                    period_len=model.period_len, pred_len=H)
-
-        train_set, _ = self._get_data(flag='train')
-        val_set, val, val_out = self._varha_collect('val')
-        test_set, test, test_out = self._varha_collect('test')
-        # time index of each window's first target step; the test inputs must continue the
-        # val segment, so every val label ends before the first test target step
-        L = args.seq_len
-        assert np.allclose(test_set.data_x[:L], val_set.data_x[-L:]), 'test split does not follow val'
-        val['t'] = np.arange(len(val['y']))
-        test['t'] = len(val['y']) - 1 + H + np.arange(len(test['y']))
-        for name, st, out in (('val', val, val_out), ('test', test, test_out)):
-            err = np.abs(V.base_pred(st, head) - out).max()
-            print('[VarHA] cached head reproduces the frozen model on {}: max |diff| = {:.2e}'.format(name, err))
-            assert err < 1e-3, 'cached head does not match the model output'
-
-        grid = dict(V.DEFAULT_GRID)
-        if getattr(args, 'varha_lr', ''):
-            grid['lr'] = [float(v) for v in args.varha_lr.split(',')]
-        if getattr(args, 'varha_groups', ''):
-            grid['n_groups'] = [int(v) for v in args.varha_groups.split(',')]
-        base_cfg = V.VarHAConfig(batch=int(getattr(args, 'varha_batch', 24)), seed=int(getattr(args, 'fix_seed', 0)))
-        t0 = time.time()
-        out = V.run_protocol(val, test, head, train_set.data_x, base_cfg, grid)
-        out['time_s'] = time.time() - t0
-        print('[VarHA] adapted parameters: {} | online time {:.1f}s'.format(
-            (out.get('info') or {}).get('trainable', 0), out['time_s']))
-
-        folder_path = './results/' + setting + '/'
-        os.makedirs(folder_path, exist_ok=True)
-        if out.get('pred') is not None:
-            np.save(folder_path + 'pred_varha.npy', out.pop('pred').astype(np.float32))
-        with open(os.path.join(folder_path, 'varha.json'), 'w') as f:
-            json.dump(out, f, indent=2, default=float)
-        p = os.path.join(folder_path, 'summary.json')
-        if os.path.isfile(p):
-            with open(p) as f:
-                s = json.load(f)
-            s['varha'] = dict(results=out['results'], selected=out.get('selected_tag'))
-            with open(p, 'w') as f:
-                json.dump(s, f, indent=2)
-        mse, mae = out['results']['B2_VarHA']
-        with open("result_long_term_forecast.txt", 'a') as f:
-            f.write(setting + "  VarHA\nmse:{}, mae:{}, selected:{}\n\n".format(mse, mae, out.get('selected_tag')))
-        return out

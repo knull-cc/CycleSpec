@@ -7,7 +7,7 @@
 #   2. when PhaseFormer is done, CycleSpec (frozen) starts on its checkpoint
 #   3. when everything is done, prints the comparison table
 # Logs: ./logs/<dataset>/{PhaseFormer,CycleSpec,CycleSpec-frozen}_pl<H>_s<seed>.log
-# SEED / GPU / NUM_WORKERS / DATA_ROOT / CS_* can be set as for the run_*.sh scripts.
+# SEED / GPU / NUM_WORKERS / DATA_ROOT / CS_* / BS / RUN_TAG can be set as for the run_*.sh scripts.
 
 cd "$(dirname "$0")/../.."
 DS=${1:?usage: compare.sh <etth1|etth2|ettm1|ettm2|weather|electricity|traffic> [pred_lens]}
@@ -31,5 +31,5 @@ wait $PID_JOINT
 echo "[$(date +%T)] CycleSpec(joint) done (exit $?)"
 
 for H in $PRED_LENS; do
-  python scripts/CycleSpec/summarize.py --ds "$DS" --pred_len "$H" --seed "$SEED"
+  python scripts/CycleSpec/summarize.py --ds "$DS" --pred_len "$H" --seed "$SEED" --tag "${RUN_TAG:-${BS:+bs$BS}}"
 done
