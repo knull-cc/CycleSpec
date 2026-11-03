@@ -275,11 +275,15 @@ if __name__ == '__main__':
             args.distil,
             args.des, ii)
 
-        print('>>>>>>>testing : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))
-        exp.test(setting, test=1)
         if args.varha:
-            print('>>>>>>>VarHA (test-time adaptation, frozen model) : {}<<<<<<<<<<'.format(setting))
+            # reuse the finished checkpoint; exp.test is not rerun so summary.json keeps the training info
+            ckpt = os.path.join(args.checkpoints, setting, 'checkpoint.pth')
+            exp.model.load_state_dict(torch.load(ckpt, map_location=args.device))
+            print('>>>>>>>VarHA (test-time adaptation, frozen model) : {} | loaded {}'.format(setting, ckpt))
             exp.test_varha(setting)
+        else:
+            print('>>>>>>>testing : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))
+            exp.test(setting, test=1)
         if args.gpu_type == 'mps':
             torch.backends.mps.empty_cache()
         elif args.gpu_type == 'cuda':

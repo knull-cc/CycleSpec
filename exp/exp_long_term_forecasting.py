@@ -399,7 +399,7 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         finally:
             hook.remove()
         cat = lambda a: np.concatenate(a, 0).astype(np.float64)
-        return data_set, dict(z=cat(Z), mu=cat(MU), sd=cat(SD), y=cat(Y)), cat(OUT)
+        return data_set, dict(z=np.concatenate(Z, 0).astype(np.float32), mu=cat(MU), sd=cat(SD), y=cat(Y)), cat(OUT)
 
     def test_varha(self, setting):
         """TT-HA style test-time heterogeneous adaptation on the frozen backbone.
