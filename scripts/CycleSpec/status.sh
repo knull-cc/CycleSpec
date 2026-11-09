@@ -2,6 +2,7 @@
 # Progress of run_all.sh / compare.sh:
 #   bash scripts/CycleSpec/status.sh                                   # official-config runs
 #   BS=256 DATASETS="ettm1 ettm2" bash scripts/CycleSpec/status.sh     # runs tagged bs256
+#   CS_PORT=block DATASETS=etth1 SEED=2022 bash scripts/CycleSpec/status.sh   # another CycleSpec variant / seed
 # Cell = test MSE/MAE when finished, "epN" while training (N finished epochs), "-" not started.
 
 cd "$(dirname "$0")/../.."
@@ -10,13 +11,20 @@ DATASETS=${DATASETS:-"etth1 etth2 ettm1 ettm2 weather electricity traffic"}
 PRED_LENS=${PRED_LENS:-"96 192 336 720"}
 RUN_TAG=${RUN_TAG:-${BS:+bs$BS}}
 T=${RUN_TAG:+_$RUN_TAG}
+CS_PORT=${CS_PORT:-input}
+CS_ARCH=${CS_ARCH:-spectral}
+case "$CS_PORT" in input) _P="" ;; block) _P="blk" ;; both) _P="both" ;; *) _P="?" ;; esac
+[ "$CS_ARCH" = "dense" ] && _A="dense" || _A=""
+if [ -n "$_P$_A" ]; then V="cs${_P:-in}${_A}"; else V=""; fi
+VS=${V:+_$V}     # suffix in model_id
+VL=${V:+-$V}     # suffix in log names
 
 cell() {  # ds H variant
   local ds=$1 H=$2 v=$3 mid model log js
   case $v in
     PhaseFormer)      mid=${ds}_pl${H}${T};        model=PhaseFormer ;;
-    CycleSpec)        mid=${ds}_pl${H}${T};        model=CycleSpec ;;
-    CycleSpec-frozen) mid=${ds}_pl${H}${T}_frozen; model=CycleSpec ;;
+    CycleSpec)        mid=${ds}_pl${H}${T}${VS};        model=CycleSpec; v=CycleSpec${VL} ;;
+    CycleSpec-frozen) mid=${ds}_pl${H}${T}${VS}_frozen; model=CycleSpec; v=CycleSpec${VL}-frozen ;;
   esac
   js=$(ls results/long_term_forecast_${mid}_${model}_*_s${SEED}_0/summary.json 2>/dev/null | head -n 1)
   log=logs/$ds/${v}_pl${H}${T}_s${SEED}.log
@@ -32,7 +40,7 @@ cell() {  # ds H variant
   fi
 }
 
-echo "tag: ${RUN_TAG:-none (official config)}   seed: $SEED   cells: MSE/MAE"
+echo "tag: ${RUN_TAG:-none (official config)}   seed: $SEED   CycleSpec port: $CS_PORT  arch: $CS_ARCH   cells: MSE/MAE"
 printf "%-12s %-5s %-14s %-14s %-17s %s\n" dataset H PhaseFormer CycleSpec CycleSpec-frozen "dMSE(joint/frozen)"
 for ds in $DATASETS; do
   for H in $PRED_LENS; do

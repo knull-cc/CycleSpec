@@ -16,6 +16,9 @@
 #                                                                           default ./resources/all_datasets
 #   LOG_DIR      logs go to $LOG_DIR/<dataset>/<variant>_pl<H>[_<tag>]_s<seed>.log   default ./logs
 #   CS_HIDDEN CS_WINDOWS CS_KERNEL CS_BRANCHES CS_ACT   adapter hyper-parameters
+#   CS_PORT      input (default, before the embedding) | block (after attention in every layer) | both
+#   CS_ARCH      spectral (default) | dense (Linear(T->T) instead of the STFT branch: capacity control)
+#   CS_BLOCK_HIDDEN  bottleneck of the block-port adapters (0 = min(8, latent_dim))
 #   FORCE=1      rerun even if the run already finished (default: finished runs are skipped)
 #
 #   Non-official settings (kept apart from the official-config runs by a tag):
@@ -38,6 +41,14 @@ CS_WINDOWS=${CS_WINDOWS:-30,15,7}
 CS_KERNEL=${CS_KERNEL:-3}
 CS_BRANCHES=${CS_BRANCHES:-both}
 CS_ACT=${CS_ACT:-gelu}
+CS_PORT=${CS_PORT:-input}          # input | block | both
+CS_ARCH=${CS_ARCH:-spectral}       # spectral | dense
+CS_BLOCK_HIDDEN=${CS_BLOCK_HIDDEN:-0}
+# CycleSpec variants other than the original (input port, spectral) get their own name token,
+# e.g. etth1_pl96_csblk, etth1_pl96_csbothdense; PhaseFormer runs never carry it
+case "$CS_PORT" in input) _P="" ;; block) _P="blk" ;; both) _P="both" ;; *) _P="?" ;; esac
+[ "$CS_ARCH" = "dense" ] && _A="dense" || _A=""
+if [ -n "$_P$_A" ]; then CS_VTAG="cs${_P:-in}${_A}"; else CS_VTAG=""; fi
 
 BS=${BS:-}
 RUN_TAG=${RUN_TAG:-${BS:+bs$BS}}
@@ -63,10 +74,13 @@ run_one() {
 
   if [ "$MODEL" = "CycleSpec" ]; then
     CS_ARGS=(--cs_hidden "$CS_HIDDEN" --cs_windows "$CS_WINDOWS" --cs_kernel "$CS_KERNEL"
-             --cs_branches "$CS_BRANCHES" --cs_act "$CS_ACT" --cs_train_mode "$CS_MODE")
+             --cs_branches "$CS_BRANCHES" --cs_act "$CS_ACT" --cs_train_mode "$CS_MODE"
+             --cs_port "$CS_PORT" --cs_arch "$CS_ARCH" --cs_block_hidden "$CS_BLOCK_HIDDEN")
+    MODEL_ID="${BASE_ID}${CS_VTAG:+_$CS_VTAG}"
+    VARIANT="CycleSpec${CS_VTAG:+-$CS_VTAG}"
     if [ "$CS_MODE" = "frozen" ]; then
-      VARIANT="CycleSpec-frozen"
-      MODEL_ID="${BASE_ID}_frozen"
+      VARIANT="CycleSpec${CS_VTAG:+-$CS_VTAG}-frozen"
+      MODEL_ID="${BASE_ID}${CS_VTAG:+_$CS_VTAG}_frozen"
       # only use a base checkpoint whose run FINISHED (has summary.json); a killed run
       # leaves a half-trained checkpoint behind
       local BASE_RES BASE_CKPT=""

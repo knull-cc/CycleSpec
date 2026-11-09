@@ -359,9 +359,12 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         summary = dict(
             setting=setting, model=a.model, model_id=a.model_id, data=a.data, data_path=a.data_path,
             seq_len=a.seq_len, pred_len=a.pred_len, seed=getattr(a, 'fix_seed', None),
-            variant=('CycleSpec-' + getattr(a, 'cs_train_mode', 'joint')) if use_cs else a.model,
-            cs=dict(hidden=a.cs_hidden, windows=a.cs_windows, kernel=a.cs_kernel, branches=a.cs_branches,
-                    act=a.cs_act, init_ckpt=a.cs_init_ckpt) if use_cs else None,
+            variant=(('CycleSpec-' + getattr(a, 'cs_train_mode', 'joint'))
+                     + ('' if getattr(a, 'cs_port', 'input') == 'input' else '@' + a.cs_port)
+                     + ('' if getattr(a, 'cs_arch', 'spectral') == 'spectral' else '+' + a.cs_arch)) if use_cs else a.model,
+            cs=dict(port=getattr(a, 'cs_port', 'input'), arch=getattr(a, 'cs_arch', 'spectral'), hidden=a.cs_hidden,
+                    block_hidden=getattr(a, 'cs_block_hidden', 0), windows=a.cs_windows, kernel=a.cs_kernel,
+                    branches=a.cs_branches, act=a.cs_act, init_ckpt=a.cs_init_ckpt) if use_cs else None,
             mse=float(mse), mae=float(mae), rmse=float(rmse),
             best_vali_loss=getattr(self, 'best_vali_loss', None), best_epoch=getattr(self, 'best_epoch', None),
             epochs_run=getattr(self, 'epochs_run', None), train_time_s=getattr(self, 'train_time', None),
