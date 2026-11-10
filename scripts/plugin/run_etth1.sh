@@ -11,6 +11,12 @@ cd "$(dirname "$0")/../.."
 #   F  PhaseFormerBDO + EMA, last-stage loss
 #   G  PhaseFormerBDO, equal stage weights
 #   H  PhaseFormerBDO with 1 stage (sanity check: should match A up to init noise)
+#   Re-parameterised head (PhaseFormerRep; merges back to a plain PhaseFormer after training):
+#   I  cascade, 3 stages      (same architecture as E, new code path)
+#   J  chain, depth 2, width 16
+#   K  chain, depth 3, width 16
+#   L  chain, depth 2, width 64
+#   M  linear                 (sanity check: same as A up to RNG)
 #
 # Usage examples (repo root):
 #   ARMS="A" bash scripts/plugin/run_etth1.sh        # step 1: seed-ensemble ceiling, baseline only
@@ -36,7 +42,7 @@ else
 fi
 
 for ARM in $ARMS; do
-  STAGES=$BDO_STAGES
+  STAGES=$BDO_STAGES; RM=chain; RD=2; RW=0
   case $ARM in
     A) MODEL=PhaseFormer;    EMA=0;           W=inv  ;;
     B) MODEL=PhaseFormer;    EMA=$EMA_DECAY;  W=inv  ;;
@@ -46,6 +52,11 @@ for ARM in $ARMS; do
     F) MODEL=PhaseFormerBDO; EMA=$EMA_DECAY;  W=last ;;
     G) MODEL=PhaseFormerBDO; EMA=0;           W=equal ;;
     H) MODEL=PhaseFormerBDO; EMA=0;           W=inv;  STAGES=1 ;;
+    I) MODEL=PhaseFormerRep; EMA=0;           W=inv;  RM=cascade ;;
+    J) MODEL=PhaseFormerRep; EMA=0;           W=inv;  RM=chain; RD=2; RW=16 ;;
+    K) MODEL=PhaseFormerRep; EMA=0;           W=inv;  RM=chain; RD=3; RW=16 ;;
+    L) MODEL=PhaseFormerRep; EMA=0;           W=inv;  RM=chain; RD=2; RW=64 ;;
+    M) MODEL=PhaseFormerRep; EMA=0;           W=inv;  RM=linear ;;
     *) echo "unknown arm $ARM"; exit 1 ;;
   esac
   for SEED in $SEEDS; do
@@ -61,7 +72,7 @@ for ARM in $ARMS; do
       --phase_num_routers $ROUT --phase_attn_heads $HEADS --phase_attn_dropout $ADROP \
       --phase_attn_use_relpos 1 --phase_use_pos_embed 1 \
       --use_revin 1 --revin_affine 0 --revin_eps 1e-5 --use_huber 1 --huber_delta $DELTA \
-      --fix_seed $SEED --ema_decay $EMA --bdo_stages $STAGES --bdo_w_mode $W \
+      --fix_seed $SEED --ema_decay $EMA --bdo_stages $STAGES --rep_mode $RM --rep_depth $RD --rep_width $RW --rep_stages $BDO_STAGES --bdo_w_mode $W \
       --des ${ARM}_s${SEED}
   done
 done
@@ -70,7 +81,7 @@ echo
 echo "=== per-arm summary ==="
 python tools/summarize_arms.py "results/*etth1_pl${PRED_LEN}_*"
 for ARM in $ARMS; do
-  case $ARM in A|B) M=PhaseFormer ;; *) M=PhaseFormerBDO ;; esac
+  case $ARM in A|B) M=PhaseFormer ;; I|J|K|L|M) M=PhaseFormerRep ;; *) M=PhaseFormerBDO ;; esac
   echo
   echo "=== seed-ensemble ceiling, arm $ARM ==="
   python tools/seed_ensemble.py "results/*etth1_pl${PRED_LEN}_${M}_ETTh1_*_${ARM}_s*_0" || true

@@ -3,6 +3,7 @@ import torch
 from models import PhaseFormer
 from models import CycleSpec
 from models import PhaseFormerBDO
+from models import PhaseFormerRep
 
 
 class Exp_Basic(object):
@@ -12,6 +13,7 @@ class Exp_Basic(object):
             'PhaseFormer': PhaseFormer,
             'CycleSpec': CycleSpec,
             'PhaseFormerBDO': PhaseFormerBDO,
+            'PhaseFormerRep': PhaseFormerRep,
         }
         if args.model == 'Mamba':
             print('Please make sure you have successfully installed mamba_ssm')

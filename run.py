@@ -163,6 +163,11 @@ if __name__ == '__main__':
     parser.add_argument('--ema_warmup', type=int, default=1, help='EMA decay warmup min(decay,(1+t)/(10+t)) (1/0)')
     parser.add_argument('--bdo_stages', type=int, default=3, help='number of BDO stages (PhaseFormerBDO); 1 = plain PhaseFormer head')
     parser.add_argument('--bdo_w_mode', type=str, default='inv', help='BDO stage loss weights: inv | equal | last')
+    # re-parameterised head (model PhaseFormerRep): affine function class, deeper linear parameterisation
+    parser.add_argument('--rep_mode', type=str, default='chain', help='linear | chain | cascade')
+    parser.add_argument('--rep_depth', type=int, default=2, help='chain: number of linear layers')
+    parser.add_argument('--rep_width', type=int, default=0, help='chain: hidden width, 0 = 4*max(latent_dim, P_out)')
+    parser.add_argument('--rep_stages', type=int, default=3, help='cascade: number of stages')
 
     # CycleSpec (used only with --model CycleSpec; --model PhaseFormer is the base)
     parser.add_argument('--cs_hidden', type=int, default=8, help='adapter bottleneck width (FC_down 24->hidden)')
