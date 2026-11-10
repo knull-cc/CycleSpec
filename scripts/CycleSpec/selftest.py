@@ -142,9 +142,33 @@ def port_tests(device, port, arch, band="all"):
     ok(r > 0, f"||Delta||/||x|| diagnostic = {r:.2e}")
 
 
+def exchange_test(device):
+    """Exchange grid: seq 96, period 7 -> 14 cycles (padded), auto windows 14/7/3, band nodc."""
+    print("  -- exchange grid: seq_len=96 period_len=7 enc_in=8 windows=auto band=nodc")
+    kw = dict(seq_len=96, period_len=7, enc_in=8, phase_layers=1, latent_dim=8, phase_num_routers=4,
+              cs_windows="auto", cs_band="nodc")
+    torch.manual_seed(2021)
+    base = PhaseFormer(etth1_cfg(**kw)).float().to(device).eval()
+    torch.manual_seed(2021)
+    plug = CycleSpec(etth1_cfg(**kw)).float().to(device).eval()
+    ad = plug.cyclespec["input"]
+    for s in ad.freq_scales:
+        u = torch.randn(16, ad.axis_len, 2, device=device)
+        err = (s(u, apply_conv=False) - u).abs().max().item()
+        ok(err < 1e-4, f"T={ad.axis_len} win={s.win} hop={s.hop} STFT->iSTFT err={err:.1e}")
+    x = torch.randn(4, 96, 8, device=device)
+    with torch.no_grad():
+        d = (base(x) - plug(x)).abs().max().item()
+    ok(d < 1e-5, f"output == PhaseFormer at init (max diff {d:.1e})")
+    plug.train()
+    torch.nn.functional.mse_loss(plug(x), torch.randn(4, 96, 8, device=device)).backward()
+    ok(ad.fc_up.weight.grad is not None and ad.fc_up.weight.grad.abs().sum().item() > 0, "adapter receives gradient")
+
+
 def run(device):
     print(f"\n=== device: {device} ===")
     core_tests(device)
+    exchange_test(device)
     for port, arch, band in (("input", "spectral", "all"), ("block", "spectral", "all"), ("both", "spectral", "all"),
                              ("block", "dense", "all"), ("output", "spectral", "all"), ("io", "spectral", "all"),
                              ("input", "spectral", "nodc"), ("input", "spectral", "mid")):
