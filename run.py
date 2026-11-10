@@ -158,6 +158,12 @@ if __name__ == '__main__':
     # seed (the upstream code hard-coded 2021; same default)
     parser.add_argument('--fix_seed', type=int, default=2021, help='global random seed')
 
+    # plugins: EMA / BDO output head (model PhaseFormerBDO)
+    parser.add_argument('--ema_decay', type=float, default=0.0, help='EMA decay per optimizer step, 0 = off')
+    parser.add_argument('--ema_warmup', type=int, default=1, help='EMA decay warmup min(decay,(1+t)/(10+t)) (1/0)')
+    parser.add_argument('--bdo_stages', type=int, default=3, help='number of BDO stages (PhaseFormerBDO); 1 = plain PhaseFormer head')
+    parser.add_argument('--bdo_w_mode', type=str, default='inv', help='BDO stage loss weights: inv | equal | last')
+
     # CycleSpec (used only with --model CycleSpec; --model PhaseFormer is the base)
     parser.add_argument('--cs_hidden', type=int, default=8, help='adapter bottleneck width (FC_down 24->hidden)')
     parser.add_argument('--cs_port', type=str, default='input', help='input | block | both (input+block) | output | io (input+output): where the adapter is attached')

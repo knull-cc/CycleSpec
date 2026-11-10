@@ -12,6 +12,8 @@ import warnings
 import numpy as np
 from utils.dtw_metric import dtw, accelerated_dtw
 from utils.augmentation import run_augmentation, run_augmentation_single
+from utils.ema import ModelEMA
+from utils.bdo_utils import bdo_stage_weights
 
 warnings.filterwarnings('ignore')
 
@@ -92,11 +94,31 @@ class Exp_Long_Term_Forecast(Exp_Basic):
             criterion = nn.MSELoss()
             print('Using MSELoss')
         return criterion
- 
+
+    # ---- plugin hooks (EMA / BDO) -------------------------------------------------------
+    def _eval_model(self):
+        """Model used for validation, early stopping and checkpoints: EMA shadow if enabled."""
+        ema = getattr(self, 'ema', None)
+        return ema.module if ema is not None else self.model
+
+    def _train_loss(self, outputs, batch_y, criterion, f_dim):
+        """Plain criterion, or the multi-stage prefix loss when the model exposes stage_outputs."""
+        stage_outputs = getattr(self.model, 'stage_outputs', None)
+        if not stage_outputs:
+            return criterion(outputs, batch_y)
+        weights = bdo_stage_weights(getattr(self.args, 'bdo_w_mode', 'inv'), len(stage_outputs))
+        loss = 0.
+        for w, o in zip(weights, stage_outputs):
+            if w == 0.:
+                continue
+            loss = loss + w * criterion(o[:, :, f_dim:], batch_y[:, :o.shape[1], :])
+        return loss
+    # --------------------------------------------------------------------------------------
 
     def vali(self, vali_data, vali_loader, criterion):
         total_loss = []
-        self.model.eval()
+        model = self._eval_model()
+        model.eval()
         with torch.no_grad():
             for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in enumerate(vali_loader):
                 batch_x = batch_x.float().to(self.device)
@@ -111,9 +133,9 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                 # encoder - decoder
                 if self.args.use_amp:
                     with torch.cuda.amp.autocast():
-                        outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
+                        outputs = model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
                 else:
-                    outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
+                    outputs = model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
                 f_dim = -1 if self.args.features == 'MS' else 0
                 outputs = outputs[:, -self.args.pred_len:, f_dim:]
                 batch_y = batch_y[:, -self.args.pred_len:, f_dim:].to(self.device)
@@ -145,6 +167,14 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         model_optim = self._select_optimizer()
         criterion = self._select_criterion()
 
+        # EMA shadow weights (off when ema_decay <= 0)
+        ema_decay = float(getattr(self.args, 'ema_decay', 0.0))
+        if ema_decay > 0:
+            self.ema = ModelEMA(self.model, decay=ema_decay, warmup=bool(getattr(self.args, 'ema_warmup', 1)))
+            print('EMA enabled: decay={}, warmup={}'.format(ema_decay, self.ema.warmup))
+        else:
+            self.ema = None
+
         if self.args.use_amp:
             scaler = torch.cuda.amp.GradScaler()
 
@@ -161,7 +191,7 @@ class Exp_Long_Term_Forecast(Exp_Basic):
             self.init_test_loss = self.vali(test_data, test_loader, criterion)
             print("Epoch: 0 (init = base ckpt) | Vali Loss: {0:.7f} Test Loss: {1:.7f}".format(
                 self.init_vali_loss, self.init_test_loss))
-            early_stopping(self.init_vali_loss, self.model, path)
+            early_stopping(self.init_vali_loss, self._eval_model(), path)
             self.best_epoch = 0
 
         for epoch in range(self.args.train_epochs):
@@ -190,7 +220,7 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                         f_dim = -1 if self.args.features == 'MS' else 0
                         outputs = outputs[:, -self.args.pred_len:, f_dim:]
                         batch_y = batch_y[:, -self.args.pred_len:, f_dim:].to(self.device)
-                        loss = criterion(outputs, batch_y)
+                        loss = self._train_loss(outputs, batch_y, criterion, f_dim)
                         train_loss.append(loss.item())
                 else:
                     outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
@@ -198,7 +228,7 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                     f_dim = -1 if self.args.features == 'MS' else 0
                     outputs = outputs[:, -self.args.pred_len:, f_dim:]
                     batch_y = batch_y[:, -self.args.pred_len:, f_dim:].to(self.device)
-                    loss = criterion(outputs, batch_y)
+                    loss = self._train_loss(outputs, batch_y, criterion, f_dim)
                     train_loss.append(loss.item())
 
                 if (i + 1) % 100 == 0:
@@ -217,6 +247,9 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                     loss.backward()
                     model_optim.step()
 
+                if self.ema is not None:
+                    self.ema.update(self.model)
+
             print("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_time))
             train_loss = np.average(train_loss)
             vali_loss = self.vali(vali_data, vali_loader, criterion)
@@ -232,7 +265,7 @@ class Exp_Long_Term_Forecast(Exp_Basic):
             ratio = self._delta_ratio(probe_x)
             if ratio is not None:
                 print("\t[CycleSpec] ||Delta||/||X|| on a probe batch: {:.5f}".format(ratio))
-            early_stopping(vali_loss, self.model, path)
+            early_stopping(vali_loss, self._eval_model(), path)
             if early_stopping.counter == 0:
                 self.best_epoch = epoch + 1
             if early_stopping.early_stop:

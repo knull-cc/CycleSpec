@@ -2,6 +2,7 @@ import os
 import torch
 from models import PhaseFormer
 from models import CycleSpec
+from models import PhaseFormerBDO
 
 
 class Exp_Basic(object):
@@ -10,6 +11,7 @@ class Exp_Basic(object):
         self.model_dict = {
             'PhaseFormer': PhaseFormer,
             'CycleSpec': CycleSpec,
+            'PhaseFormerBDO': PhaseFormerBDO,
         }
         if args.model == 'Mamba':
             print('Please make sure you have successfully installed mamba_ssm')
