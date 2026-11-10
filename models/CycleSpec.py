@@ -13,12 +13,17 @@ One module, one contract:  CycleSpecAdapter(x) with x of shape (N, T, F) -> (N, 
 A host model only decides WHERE to call it ("ports") and how to view the tensor found there as
 (N, T, F). Ports are attached with forward hooks, so the host's code is not modified.
 
-PhaseFormer ports (select with --cs_port input | block | both):
+PhaseFormer ports (select with --cs_port input | block | both | output | io):
     input : the RevIN-normalised input as cycles, before the phase embedding
             tensor (B, C, 24 phases, 30 cycles) -> (B*C, T=30 cycles, F=24), non-periodic
     block : after the cross-phase routing attention (+ residual + LayerNorm) of every routing layer,
             before its MLP (the "after MHSA in every block" position of Frame2Freq)
             tensor (B*C, 24 phases, D) -> T=24 phases (periodic: hour 23 is next to hour 0), F=D
+    output: on the forecast. The past cycles (RevIN-normalised input) and the predicted future cycles
+            are joined along the cycle axis, (B*C, 30 + P_out, 24); the adapter refines this sequence
+            and only the future cycles are kept. It sees how each day's shape and level evolve
+            across the history and into the forecast (works for any forecaster that outputs a series).
+    both = input + block, io = input + output
 
 --cs_arch dense replaces the STFT branch by a dense Linear(T -> T) on the same bottleneck
 (capacity control: does the spectral structure matter, or only the extra parameters?).
@@ -175,7 +180,7 @@ def attach_output_port(module, adapter, to_ntf, from_ntf, probe):
 class Model(PhaseFormer):
     """PhaseFormer with CycleSpec adapters attached at the chosen port(s)."""
 
-    PORTS = ("input", "block", "both")
+    PORTS = ("input", "block", "both", "output", "io")
 
     def __init__(self, configs):
         super().__init__(configs)  # identical backbone, identical RNG consumption
@@ -197,7 +202,7 @@ class Model(PhaseFormer):
         self.cyclespec = nn.ModuleDict()
         with torch.random.fork_rng(devices=[]):
             torch.default_generator.manual_seed(int(getattr(configs, "fix_seed", 2021)) + 7919)
-            if self.cs_port in ("input", "both"):
+            if self.cs_port in ("input", "both", "io"):
                 self.cyclespec["input"] = CycleSpecAdapter(
                     feat_dim=self.period_len, axis_len=self.num_periods_input,
                     hidden=int(getattr(configs, "cs_hidden", 8)), windows=windows, periodic=False, **common)
@@ -206,8 +211,19 @@ class Model(PhaseFormer):
                     CycleSpecAdapter(feat_dim=self.latent_dim, axis_len=self.period_len, hidden=block_hidden,
                                      windows=None, periodic=True, **common)
                     for _ in self.routing_layers])
+            if self.cs_port in ("output", "io"):
+                self.cyclespec["output"] = CycleSpecAdapter(
+                    feat_dim=self.period_len, axis_len=self.num_periods_input + self.num_periods_output,
+                    hidden=int(getattr(configs, "cs_hidden", 8)), windows=None, periodic=False, **common)
 
         self._hooks = []
+        self._past = None
+        if "output" in self.cyclespec:
+            # keep the original (pre-adapter) past cycles for the output port; registered first so it
+            # runs before the input-port hook
+            def stash(mod, args):
+                self._past = args[0]
+            self._hooks.append(self.embedding.register_forward_pre_hook(stash))
         if "input" in self.cyclespec:
             # PhaseEmbedding input: (B, C, L=24 phases, P_in=30 cycles) -> (B*C, 30, 24)
             def to_ntf(x):
@@ -223,6 +239,18 @@ class Model(PhaseFormer):
             # output of norm1 inside each CrossPhaseRoutingLayer: (B*C, 24 phases, D), already (N, T, F)
             for unit, ad in zip(self.routing_layers, self.cyclespec["block"]):
                 self._hooks.append(attach_output_port(unit.interact.norm1, ad, lambda x: x, lambda y, x: y, self._probe))
+
+        if "output" in self.cyclespec:
+            # predictor output: (B, C, L=24 phases, P_out future cycles); past: (B, C, 24, P_in)
+            def out_hook(mod, args, y):
+                past = self._past
+                B, C, L, Po = y.shape
+                seq = torch.cat([past, y], dim=-1)                       # (B, C, 24, P_in + P_out)
+                ntf = seq.permute(0, 1, 3, 2).reshape(B * C, seq.shape[-1], L)
+                ref = _apply(self.cyclespec["output"], ntf, self._probe)
+                ref = ref.reshape(B, C, seq.shape[-1], L).permute(0, 1, 3, 2)
+                return ref[..., -Po:]
+            self._hooks.append(self.predictor.register_forward_hook(out_hook))
 
     # ---------------- frozen-backbone protocol ----------------
     def backbone_named_parameters(self):

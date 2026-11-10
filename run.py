@@ -160,7 +160,7 @@ if __name__ == '__main__':
 
     # CycleSpec (used only with --model CycleSpec; --model PhaseFormer is the base)
     parser.add_argument('--cs_hidden', type=int, default=8, help='adapter bottleneck width (FC_down 24->hidden)')
-    parser.add_argument('--cs_port', type=str, default='input', help='input | block | both (where the adapter is attached)')
+    parser.add_argument('--cs_port', type=str, default='input', help='input | block | both (input+block) | output | io (input+output): where the adapter is attached')
     parser.add_argument('--cs_arch', type=str, default='spectral', help='spectral | dense (dense = Linear(T->T) capacity control)')
     parser.add_argument('--cs_block_hidden', type=int, default=0, help='bottleneck of the block-port adapters (0 = min(8, latent_dim))')
     parser.add_argument('--cs_windows', type=str, default='30,15,7', help='STFT window lengths on the cycle axis')
@@ -178,8 +178,8 @@ if __name__ == '__main__':
     args = parser.parse_args()
     if args.model == 'CycleSpec' and args.cs_train_mode not in ('joint', 'frozen'):
         parser.error('--cs_train_mode must be joint or frozen')
-    if args.model == 'CycleSpec' and (args.cs_port not in ('input', 'block', 'both') or args.cs_arch not in ('spectral', 'dense')):
-        parser.error('--cs_port must be input|block|both and --cs_arch spectral|dense')
+    if args.model == 'CycleSpec' and (args.cs_port not in ('input', 'block', 'both', 'output', 'io') or args.cs_arch not in ('spectral', 'dense')):
+        parser.error('--cs_port must be input|block|both|output|io and --cs_arch spectral|dense')
 
     fix_seed = args.fix_seed
     random.seed(fix_seed)

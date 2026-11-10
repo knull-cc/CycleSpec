@@ -13,7 +13,7 @@ RUN_TAG=${RUN_TAG:-${BS:+bs$BS}}
 T=${RUN_TAG:+_$RUN_TAG}
 CS_PORT=${CS_PORT:-input}
 CS_ARCH=${CS_ARCH:-spectral}
-case "$CS_PORT" in input) _P="" ;; block) _P="blk" ;; both) _P="both" ;; *) _P="?" ;; esac
+case "$CS_PORT" in input) _P="" ;; block) _P="blk" ;; both) _P="both" ;; output) _P="out" ;; io) _P="io" ;; *) _P="?" ;; esac
 [ "$CS_ARCH" = "dense" ] && _A="dense" || _A=""
 if [ -n "$_P$_A" ]; then V="cs${_P:-in}${_A}"; else V=""; fi
 VS=${V:+_$V}     # suffix in model_id

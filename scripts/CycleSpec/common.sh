@@ -41,12 +41,12 @@ CS_WINDOWS=${CS_WINDOWS:-30,15,7}
 CS_KERNEL=${CS_KERNEL:-3}
 CS_BRANCHES=${CS_BRANCHES:-both}
 CS_ACT=${CS_ACT:-gelu}
-CS_PORT=${CS_PORT:-input}          # input | block | both
+CS_PORT=${CS_PORT:-input}          # input | block | both | output | io
 CS_ARCH=${CS_ARCH:-spectral}       # spectral | dense
 CS_BLOCK_HIDDEN=${CS_BLOCK_HIDDEN:-0}
 # CycleSpec variants other than the original (input port, spectral) get their own name token,
 # e.g. etth1_pl96_csblk, etth1_pl96_csbothdense; PhaseFormer runs never carry it
-case "$CS_PORT" in input) _P="" ;; block) _P="blk" ;; both) _P="both" ;; *) _P="?" ;; esac
+case "$CS_PORT" in input) _P="" ;; block) _P="blk" ;; both) _P="both" ;; output) _P="out" ;; io) _P="io" ;; *) _P="?" ;; esac
 [ "$CS_ARCH" = "dense" ] && _A="dense" || _A=""
 if [ -n "$_P$_A" ]; then CS_VTAG="cs${_P:-in}${_A}"; else CS_VTAG=""; fi
 

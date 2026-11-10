@@ -134,7 +134,8 @@ def port_tests(device, port, arch):
 def run(device):
     print(f"\n=== device: {device} ===")
     core_tests(device)
-    for port, arch in (("input", "spectral"), ("block", "spectral"), ("both", "spectral"), ("block", "dense")):
+    for port, arch in (("input", "spectral"), ("block", "spectral"), ("both", "spectral"), ("block", "dense"),
+                       ("output", "spectral"), ("io", "spectral")):
         port_tests(device, port, arch)
 
 
