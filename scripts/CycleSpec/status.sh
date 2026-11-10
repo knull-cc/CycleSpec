@@ -15,7 +15,9 @@ CS_PORT=${CS_PORT:-input}
 CS_ARCH=${CS_ARCH:-spectral}
 case "$CS_PORT" in input) _P="" ;; block) _P="blk" ;; both) _P="both" ;; output) _P="out" ;; io) _P="io" ;; *) _P="?" ;; esac
 [ "$CS_ARCH" = "dense" ] && _A="dense" || _A=""
-if [ -n "$_P$_A" ]; then V="cs${_P:-in}${_A}"; else V=""; fi
+CS_BAND=${CS_BAND:-all}            # all | nodc | mid
+[ "$CS_BAND" = "all" ] && _B="" || _B="$CS_BAND"
+if [ -n "$_P$_A$_B" ]; then V="cs${_P:-in}${_A}${_B}"; else V=""; fi
 VS=${V:+_$V}     # suffix in model_id
 VL=${V:+-$V}     # suffix in log names
 

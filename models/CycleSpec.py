@@ -25,6 +25,12 @@ PhaseFormer ports (select with --cs_port input | block | both | output | io):
             across the history and into the forecast (works for any forecaster that outputs a series).
     both = input + block, io = input + output
 
+--cs_band restricts the correction Delta to a band of the axis (applied to Delta with an rFFT mask, so
+it holds whatever the branches and biases do):
+    all  : every frequency (original behaviour)
+    nodc : everything except bin 0, so the mean along the axis is never changed
+    mid  : only periods of 3.75 to 10 positions along the axis (bins 3..8 for T=30 cycles)
+
 --cs_arch dense replaces the STFT branch by a dense Linear(T -> T) on the same bottleneck
 (capacity control: does the spectral structure matter, or only the extra parameters?).
 """
@@ -81,6 +87,18 @@ class DenseMix(nn.Module):
         return self.lin(u.permute(0, 2, 1)).permute(0, 2, 1)
 
 
+def band_mask(T: int, band: str):
+    """Boolean mask over rFFT bins 0..T//2 of an axis of length T."""
+    k = torch.arange(T // 2 + 1, dtype=torch.float32)
+    if band == "all":
+        return torch.ones_like(k, dtype=torch.bool)
+    if band == "nodc":
+        return k > 0
+    if band == "mid":  # periods between 3.75 and 10 positions: T/10 <= k <= T/3.75
+        return (k >= T / 10.0 - 1e-6) & (k <= T / 3.75 + 1e-6) & (k > 0)
+    raise ValueError(band)
+
+
 def default_windows(T: int):
     return sorted({max(2, T), max(2, T // 2), max(2, T // 4)}, reverse=True)
 
@@ -90,7 +108,7 @@ class CycleSpecAdapter(nn.Module):
 
     def __init__(self, feat_dim: int, axis_len: int, hidden: int = 8, windows: Optional[Sequence[int]] = None,
                  kernel: int = 3, branches: str = "both", act: str = "gelu", arch: str = "spectral",
-                 periodic: bool = False, chunk: int = 8192):
+                 periodic: bool = False, chunk: int = 8192, band: str = "all"):
         super().__init__()
         assert branches in ("both", "freq", "time"), branches
         assert act in ("gelu", "none"), act
@@ -98,6 +116,8 @@ class CycleSpecAdapter(nn.Module):
         self.feat_dim, self.axis_len, self.hidden = feat_dim, axis_len, hidden
         self.branches, self.act, self.arch, self.periodic = branches, act, arch, periodic
         self.chunk = int(chunk)
+        self.band = band
+        self.register_buffer("bmask", band_mask(axis_len, band), persistent=False)
         if branches == "both":
             self.c_freq = hidden // 2
             self.c_time = hidden - self.c_freq
@@ -139,7 +159,12 @@ class CycleSpecAdapter(nn.Module):
         if self.c_time > 0:
             u_t = u[..., self.c_freq:]
             parts.append(self.time_conv(u_t.permute(0, 2, 1)).permute(0, 2, 1))
-        return self.fc_up(torch.cat(parts, dim=-1))
+        d = self.fc_up(torch.cat(parts, dim=-1))
+        if self.band != "all":  # keep only the chosen band of Delta along the axis
+            T = d.shape[1]
+            D = torch.fft.rfft(d, dim=1) * self.bmask.to(d.dtype)[None, :, None]
+            d = torch.fft.irfft(D, n=T, dim=1)
+        return d
 
     def forward(self, x):
         return x + self.delta(x)
@@ -192,7 +217,7 @@ class Model(PhaseFormer):
 
         common = dict(kernel=int(getattr(configs, "cs_kernel", 3)), branches=getattr(configs, "cs_branches", "both"),
                       act=getattr(configs, "cs_act", "gelu"), arch=getattr(configs, "cs_arch", "spectral"),
-                      chunk=int(getattr(configs, "cs_chunk", 8192)))
+                      chunk=int(getattr(configs, "cs_chunk", 8192)), band=getattr(configs, "cs_band", "all"))
         windows = getattr(configs, "cs_windows", "auto")
         windows = None if windows in (None, "", "auto") else [int(w) for w in str(windows).split(",") if w.strip()]
         block_hidden = int(getattr(configs, "cs_block_hidden", 0)) or max(2, min(8, self.latent_dim))

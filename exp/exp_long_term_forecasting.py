@@ -361,8 +361,10 @@ class Exp_Long_Term_Forecast(Exp_Basic):
             seq_len=a.seq_len, pred_len=a.pred_len, seed=getattr(a, 'fix_seed', None),
             variant=(('CycleSpec-' + getattr(a, 'cs_train_mode', 'joint'))
                      + ('' if getattr(a, 'cs_port', 'input') == 'input' else '@' + a.cs_port)
-                     + ('' if getattr(a, 'cs_arch', 'spectral') == 'spectral' else '+' + a.cs_arch)) if use_cs else a.model,
-            cs=dict(port=getattr(a, 'cs_port', 'input'), arch=getattr(a, 'cs_arch', 'spectral'), hidden=a.cs_hidden,
+                     + ('' if getattr(a, 'cs_arch', 'spectral') == 'spectral' else '+' + a.cs_arch)
+                     + ('' if getattr(a, 'cs_band', 'all') == 'all' else '+' + a.cs_band)) if use_cs else a.model,
+            cs=dict(port=getattr(a, 'cs_port', 'input'), arch=getattr(a, 'cs_arch', 'spectral'),
+                    band=getattr(a, 'cs_band', 'all'), hidden=a.cs_hidden,
                     block_hidden=getattr(a, 'cs_block_hidden', 0), windows=a.cs_windows, kernel=a.cs_kernel,
                     branches=a.cs_branches, act=a.cs_act, init_ckpt=a.cs_init_ckpt) if use_cs else None,
             mse=float(mse), mae=float(mae), rmse=float(rmse),

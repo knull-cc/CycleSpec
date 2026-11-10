@@ -29,7 +29,7 @@ def etth1_cfg(**kw):
         phase_attn_window=None, phase_attention_dim=None, phase_use_pos_embed=1, phase_pos_dropout=0.0,
         use_revin=1, revin_affine=0, revin_eps=1e-5, fix_seed=2021,
         cs_hidden=8, cs_windows="30,15,7", cs_kernel=3, cs_branches="both", cs_act="gelu",
-        cs_port="input", cs_arch="spectral", cs_block_hidden=0, cs_chunk=8192,
+        cs_port="input", cs_arch="spectral", cs_band="all", cs_block_hidden=0, cs_chunk=8192,
     )
     cfg.update(kw)
     return Namespace(**cfg)
@@ -69,6 +69,17 @@ def core_tests(device):
                  for a, b in zip(ad_c.parameters(), ad_f.parameters()))
     ok(d_out < 1e-5 and d_grad < 1e-4, f"chunked == unchunked (output diff {d_out:.1e}, relative grad diff {d_grad:.1e})")
 
+    for band in ("nodc", "mid"):
+        a = CycleSpecAdapter(feat_dim=24, axis_len=30, hidden=8, band=band).to(device)
+        torch.nn.init.normal_(a.fc_up.weight, std=0.5)
+        torch.nn.init.normal_(a.fc_up.bias, std=0.5)
+        with torch.no_grad():
+            d = a.delta(torch.randn(16, 30, 24, device=device))
+            E = torch.fft.rfft(d, dim=1).abs().pow(2).sum(dim=(0, 2))
+        kept = a.bmask.nonzero().flatten().tolist()
+        leak = (E[~a.bmask].sum() / E.sum()).item()
+        ok(leak < 1e-6, f"band={band}: correction keeps bins {kept}, energy outside the band {leak:.1e}")
+
     if device.type == "cuda":
         big = CycleSpecAdapter(feat_dim=24, axis_len=30, hidden=8).to(device)
         torch.nn.init.normal_(big.fc_up.weight, std=0.1)
@@ -79,15 +90,15 @@ def core_tests(device):
         torch.cuda.empty_cache()
 
 
-def port_tests(device, port, arch):
-    print(f"  -- port={port} arch={arch}")
+def port_tests(device, port, arch, band="all"):
+    print(f"  -- port={port} arch={arch} band={band}")
     cuda = device.type == "cuda"
     torch.manual_seed(2021)
     base = PhaseFormer(etth1_cfg()).float()
     rng_b = torch.get_rng_state()
     cuda_b = torch.cuda.get_rng_state_all() if cuda else []
     torch.manual_seed(2021)
-    plug = CycleSpec(etth1_cfg(cs_port=port, cs_arch=arch)).float()
+    plug = CycleSpec(etth1_cfg(cs_port=port, cs_arch=arch, cs_band=band)).float()
     rng_p = torch.get_rng_state()
     cuda_p = torch.cuda.get_rng_state_all() if cuda else []
     ok(torch.equal(rng_b, rng_p) and all(torch.equal(a, b) for a, b in zip(cuda_b, cuda_p)),
@@ -134,9 +145,10 @@ def port_tests(device, port, arch):
 def run(device):
     print(f"\n=== device: {device} ===")
     core_tests(device)
-    for port, arch in (("input", "spectral"), ("block", "spectral"), ("both", "spectral"), ("block", "dense"),
-                       ("output", "spectral"), ("io", "spectral")):
-        port_tests(device, port, arch)
+    for port, arch, band in (("input", "spectral", "all"), ("block", "spectral", "all"), ("both", "spectral", "all"),
+                             ("block", "dense", "all"), ("output", "spectral", "all"), ("io", "spectral", "all"),
+                             ("input", "spectral", "nodc"), ("input", "spectral", "mid")):
+        port_tests(device, port, arch, band)
 
 
 if __name__ == "__main__":

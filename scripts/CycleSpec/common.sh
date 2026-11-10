@@ -48,7 +48,9 @@ CS_BLOCK_HIDDEN=${CS_BLOCK_HIDDEN:-0}
 # e.g. etth1_pl96_csblk, etth1_pl96_csbothdense; PhaseFormer runs never carry it
 case "$CS_PORT" in input) _P="" ;; block) _P="blk" ;; both) _P="both" ;; output) _P="out" ;; io) _P="io" ;; *) _P="?" ;; esac
 [ "$CS_ARCH" = "dense" ] && _A="dense" || _A=""
-if [ -n "$_P$_A" ]; then CS_VTAG="cs${_P:-in}${_A}"; else CS_VTAG=""; fi
+CS_BAND=${CS_BAND:-all}            # all | nodc | mid
+[ "$CS_BAND" = "all" ] && _B="" || _B="$CS_BAND"
+if [ -n "$_P$_A$_B" ]; then CS_VTAG="cs${_P:-in}${_A}${_B}"; else CS_VTAG=""; fi
 
 BS=${BS:-}
 RUN_TAG=${RUN_TAG:-${BS:+bs$BS}}
@@ -75,7 +77,7 @@ run_one() {
   if [ "$MODEL" = "CycleSpec" ]; then
     CS_ARGS=(--cs_hidden "$CS_HIDDEN" --cs_windows "$CS_WINDOWS" --cs_kernel "$CS_KERNEL"
              --cs_branches "$CS_BRANCHES" --cs_act "$CS_ACT" --cs_train_mode "$CS_MODE"
-             --cs_port "$CS_PORT" --cs_arch "$CS_ARCH" --cs_block_hidden "$CS_BLOCK_HIDDEN")
+             --cs_port "$CS_PORT" --cs_arch "$CS_ARCH" --cs_band "$CS_BAND" --cs_block_hidden "$CS_BLOCK_HIDDEN")
     MODEL_ID="${BASE_ID}${CS_VTAG:+_$CS_VTAG}"
     VARIANT="CycleSpec${CS_VTAG:+-$CS_VTAG}"
     if [ "$CS_MODE" = "frozen" ]; then
