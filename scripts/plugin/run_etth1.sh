@@ -9,6 +9,8 @@ cd "$(dirname "$0")/../.."
 #   D  PhaseFormerBDO + EMA             compare with B
 #   E  PhaseFormerBDO, last-stage loss  architecture-only ablation (no prefix supervision)
 #   F  PhaseFormerBDO + EMA, last-stage loss
+#   G  PhaseFormerBDO, equal stage weights
+#   H  PhaseFormerBDO with 1 stage (sanity check: should match A up to init noise)
 #
 # Usage examples (repo root):
 #   ARMS="A" bash scripts/plugin/run_etth1.sh        # step 1: seed-ensemble ceiling, baseline only
@@ -34,6 +36,7 @@ else
 fi
 
 for ARM in $ARMS; do
+  STAGES=$BDO_STAGES
   case $ARM in
     A) MODEL=PhaseFormer;    EMA=0;           W=inv  ;;
     B) MODEL=PhaseFormer;    EMA=$EMA_DECAY;  W=inv  ;;
@@ -41,6 +44,8 @@ for ARM in $ARMS; do
     D) MODEL=PhaseFormerBDO; EMA=$EMA_DECAY;  W=inv  ;;
     E) MODEL=PhaseFormerBDO; EMA=0;           W=last ;;
     F) MODEL=PhaseFormerBDO; EMA=$EMA_DECAY;  W=last ;;
+    G) MODEL=PhaseFormerBDO; EMA=0;           W=equal ;;
+    H) MODEL=PhaseFormerBDO; EMA=0;           W=inv;  STAGES=1 ;;
     *) echo "unknown arm $ARM"; exit 1 ;;
   esac
   for SEED in $SEEDS; do
@@ -56,7 +61,7 @@ for ARM in $ARMS; do
       --phase_num_routers $ROUT --phase_attn_heads $HEADS --phase_attn_dropout $ADROP \
       --phase_attn_use_relpos 1 --phase_use_pos_embed 1 \
       --use_revin 1 --revin_affine 0 --revin_eps 1e-5 --use_huber 1 --huber_delta $DELTA \
-      --fix_seed $SEED --ema_decay $EMA --bdo_stages $BDO_STAGES --bdo_w_mode $W \
+      --fix_seed $SEED --ema_decay $EMA --bdo_stages $STAGES --bdo_w_mode $W \
       --des ${ARM}_s${SEED}
   done
 done
