@@ -70,7 +70,7 @@ for ARM in $ARMS; do
   for SEED in $SEEDS; do
     echo "=== arm $ARM${LRTAG} lradj $LRADJ  model $MODEL  ema $EMA  w_mode $W  H=$PRED_LEN  seed $SEED ==="
     python run.py \
-      --task_name long_term_forecast --is_training 1 \
+      --task_name long_term_forecast --is_training ${TRAIN:-1} --head_refit ${REFIT:-0} \
       --model_id etth1_pl${PRED_LEN} --model $MODEL \
       --data ETTh1 --root_path $ROOT_PATH --data_path ETTh1.csv --features M --enc_in 7 \
       --seq_len 720 --pred_len $PRED_LEN \

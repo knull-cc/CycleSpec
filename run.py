@@ -168,6 +168,7 @@ if __name__ == '__main__':
     parser.add_argument('--rep_depth', type=int, default=2, help='chain: number of linear layers')
     parser.add_argument('--rep_width', type=int, default=0, help='chain: hidden width, 0 = 4*max(latent_dim, P_out)')
     parser.add_argument('--rep_stages', type=int, default=3, help='cascade: number of stages')
+    parser.add_argument('--head_refit', type=int, default=0, help='1: after test, closed-form refit of the PhaseFormer head (utils/head_refit.py)')
 
     # CycleSpec (used only with --model CycleSpec; --model PhaseFormer is the base)
     parser.add_argument('--cs_hidden', type=int, default=8, help='adapter bottleneck width (FC_down 24->hidden)')
@@ -259,6 +260,9 @@ if __name__ == '__main__':
 
             print('>>>>>>>testing : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))
             exp.test(setting)
+            if args.head_refit:
+                from utils.head_refit import head_refit
+                head_refit(exp, setting)
             if args.gpu_type == 'mps':
                 torch.backends.mps.empty_cache()
             elif args.gpu_type == 'cuda':
@@ -289,6 +293,9 @@ if __name__ == '__main__':
 
         print('>>>>>>>testing : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))
         exp.test(setting, test=1)
+        if args.head_refit:
+            from utils.head_refit import head_refit
+            head_refit(exp, setting)
         if args.gpu_type == 'mps':
             torch.backends.mps.empty_cache()
         elif args.gpu_type == 'cuda':
