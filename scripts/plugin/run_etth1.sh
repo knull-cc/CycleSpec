@@ -36,6 +36,10 @@ BDO_STAGES=${BDO_STAGES:-3}
 GPU=${GPU:-0}
 DATA_ROOT=${DATA_ROOT:-./resources/all_datasets}
 ROOT_PATH=${ROOT_PATH:-$DATA_ROOT/ETT-small/}
+# LR schedule: type3 = official PhaseFormer repo; constant = scripts/run_etth1.sh of this repo.
+# Non-default schedules are tagged into --des (e.g. Nconstant_s2021) so results never overwrite.
+LRADJ=${LRADJ:-type3}
+if [ "$LRADJ" = "type3" ]; then LRTAG=""; else LRTAG=$(echo "$LRADJ" | tr -cd 'A-Za-z0-9'); fi
 
 if [ "$PRED_LEN" -eq 720 ]; then
   LR=0.00015; LAT=32; ENC=128; PRED=256; ROUT=16; HEADS=2; ADROP=0.0; DELTA=0.3; EPOCHS=70; PAT=14
@@ -64,20 +68,20 @@ for ARM in $ARMS; do
     *) echo "unknown arm $ARM"; exit 1 ;;
   esac
   for SEED in $SEEDS; do
-    echo "=== arm $ARM  model $MODEL  ema $EMA  w_mode $W  H=$PRED_LEN  seed $SEED ==="
+    echo "=== arm $ARM${LRTAG} lradj $LRADJ  model $MODEL  ema $EMA  w_mode $W  H=$PRED_LEN  seed $SEED ==="
     python run.py \
       --task_name long_term_forecast --is_training 1 \
       --model_id etth1_pl${PRED_LEN} --model $MODEL \
       --data ETTh1 --root_path $ROOT_PATH --data_path ETTh1.csv --features M --enc_in 7 \
       --seq_len 720 --pred_len $PRED_LEN \
-      --train_epochs $EPOCHS --patience $PAT --batch_size 256 --learning_rate $LR --lradj type3 \
+      --train_epochs $EPOCHS --patience $PAT --batch_size 256 --learning_rate $LR --lradj $LRADJ \
       --use_gpu 1 --gpu $GPU --num_workers 2 \
       --period_len 24 --phase_layers 3 --latent_dim $LAT --phase_encoder_hidden $ENC --predictor_hidden $PRED \
       --phase_num_routers $ROUT --phase_attn_heads $HEADS --phase_attn_dropout $ADROP \
       --phase_attn_use_relpos 1 --phase_use_pos_embed 1 \
       --use_revin 1 --revin_affine 0 --revin_eps 1e-5 --use_huber 1 --huber_delta $DELTA \
       --fix_seed $SEED --ema_decay $EMA --bdo_stages $STAGES --rep_mode $RM --rep_depth $RD --rep_width $RW --rep_stages $BDO_STAGES --bdo_w_mode $W \
-      --des ${ARM}_s${SEED}
+      --des ${ARM}${LRTAG}_s${SEED}
   done
 done
 
@@ -88,5 +92,5 @@ for ARM in $ARMS; do
   case $ARM in A|B) M=PhaseFormer ;; I|J|K|L|M|N|O) M=PhaseFormerRep ;; *) M=PhaseFormerBDO ;; esac
   echo
   echo "=== seed-ensemble ceiling, arm $ARM ==="
-  python tools/seed_ensemble.py "results/*etth1_pl${PRED_LEN}_${M}_ETTh1_*_${ARM}_s*_0" || true
+  python tools/seed_ensemble.py "results/*etth1_pl${PRED_LEN}_${M}_ETTh1_*_${ARM}${LRTAG}_s*_0" || true
 done
