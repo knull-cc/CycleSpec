@@ -17,6 +17,8 @@ cd "$(dirname "$0")/../.."
 #   K  chain, depth 3, width 16
 #   L  chain, depth 2, width 64
 #   M  linear                 (sanity check: same as A up to RNG)
+#   N  chain, depth 2, width 128
+#   O  chain, depth 2, width 256
 #
 # Usage examples (repo root):
 #   ARMS="A" bash scripts/plugin/run_etth1.sh        # step 1: seed-ensemble ceiling, baseline only
@@ -57,6 +59,8 @@ for ARM in $ARMS; do
     K) MODEL=PhaseFormerRep; EMA=0;           W=inv;  RM=chain; RD=3; RW=16 ;;
     L) MODEL=PhaseFormerRep; EMA=0;           W=inv;  RM=chain; RD=2; RW=64 ;;
     M) MODEL=PhaseFormerRep; EMA=0;           W=inv;  RM=linear ;;
+    N) MODEL=PhaseFormerRep; EMA=0;           W=inv;  RM=chain; RD=2; RW=128 ;;
+    O) MODEL=PhaseFormerRep; EMA=0;           W=inv;  RM=chain; RD=2; RW=256 ;;
     *) echo "unknown arm $ARM"; exit 1 ;;
   esac
   for SEED in $SEEDS; do
@@ -81,7 +85,7 @@ echo
 echo "=== per-arm summary ==="
 python tools/summarize_arms.py "results/*etth1_pl${PRED_LEN}_*"
 for ARM in $ARMS; do
-  case $ARM in A|B) M=PhaseFormer ;; I|J|K|L|M) M=PhaseFormerRep ;; *) M=PhaseFormerBDO ;; esac
+  case $ARM in A|B) M=PhaseFormer ;; I|J|K|L|M|N|O) M=PhaseFormerRep ;; *) M=PhaseFormerBDO ;; esac
   echo
   echo "=== seed-ensemble ceiling, arm $ARM ==="
   python tools/seed_ensemble.py "results/*etth1_pl${PRED_LEN}_${M}_ETTh1_*_${ARM}_s*_0" || true
