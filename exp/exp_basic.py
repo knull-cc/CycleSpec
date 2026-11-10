@@ -4,6 +4,7 @@ from models import PhaseFormer
 from models import CycleSpec
 from models import PhaseFormerBDO
 from models import PhaseFormerRep
+from models import PhaseFormerBDR
 
 
 class Exp_Basic(object):
@@ -14,6 +15,7 @@ class Exp_Basic(object):
             'CycleSpec': CycleSpec,
             'PhaseFormerBDO': PhaseFormerBDO,
             'PhaseFormerRep': PhaseFormerRep,
+            'PhaseFormerBDR': PhaseFormerBDR,
         }
         if args.model == 'Mamba':
             print('Please make sure you have successfully installed mamba_ssm')

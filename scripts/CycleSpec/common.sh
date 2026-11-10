@@ -98,8 +98,14 @@ run_one() {
     elif [ "$CS_MODE" != "joint" ]; then
       echo "❌ CS_MODE must be joint or frozen, got: $CS_MODE"; return 1
     fi
+  elif [ "$MODEL" = "PhaseFormerBDR" ]; then
+    # ReNF BDO as a data-space plug-in; BDR_W = last | equal | inv (stage loss weights)
+    local BDR_W=${BDR_W:-last}
+    CS_ARGS=(--bdr_stages "${BDR_STAGES:-3}" --bdr_hidden "${BDR_HIDDEN:-64}" --bdr_ctx "${BDR_CTX:-96}" --bdo_w_mode "$BDR_W")
+    MODEL_ID="${BASE_ID}_bdr${BDR_W}"
+    VARIANT="PhaseFormerBDR-${BDR_W}"
   elif [ "$MODEL" != "PhaseFormer" ]; then
-    echo "❌ MODEL must be PhaseFormer or CycleSpec, got: $MODEL"; return 1
+    echo "❌ MODEL must be PhaseFormer, CycleSpec or PhaseFormerBDR, got: $MODEL"; return 1
   fi
 
   local LABEL="${VARIANT} | ${DS_ID} | H=${PRED_LEN} | seed=${SEED}${RUN_TAG:+ | tag=$RUN_TAG}"

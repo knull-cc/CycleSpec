@@ -168,6 +168,10 @@ if __name__ == '__main__':
     parser.add_argument('--rep_depth', type=int, default=2, help='chain: number of linear layers')
     parser.add_argument('--rep_width', type=int, default=0, help='chain: hidden width, 0 = 4*max(latent_dim, P_out)')
     parser.add_argument('--rep_stages', type=int, default=3, help='cascade: number of stages')
+    # BDR plug-in (model PhaseFormerBDR): ReNF's BDO as a data-space refiner on top of the backbone
+    parser.add_argument('--bdr_stages', type=int, default=3, help='BDR: number of stages')
+    parser.add_argument('--bdr_hidden', type=int, default=64, help='BDR: hidden width of each stage MLP')
+    parser.add_argument('--bdr_ctx', type=int, default=96, help='BDR: recent input steps fed to every stage (0 = all)')
     parser.add_argument('--head_refit', type=int, default=0, help='1: after test, closed-form refit of the PhaseFormer head (utils/head_refit.py)')
 
     # CycleSpec (used only with --model CycleSpec; --model PhaseFormer is the base)
